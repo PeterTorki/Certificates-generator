@@ -42,3 +42,23 @@
 .read-the-docs {
   color: #888;
 }
+
+@font-face {
+  font-family: "Yummy";
+  src: url("./assets/Yummy.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Custom theme for Tailwind */
+@theme {
+  --font-yummy: "Yummy", sans-serif;
+}
+
+/* Apply globally */
+@layer base {
+  body {
+    @apply font-yummy;
+    font-family: var(--font-yummy) !important;
+  }
+}

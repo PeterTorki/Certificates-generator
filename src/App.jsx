@@ -3,7 +3,6 @@ import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import "./App.css";
 
-// Components
 import Header from "./components/Header.jsx";
 import TemplateUpload from "./components/TemplateUpload";
 import NamesInput from "./components/NamesInput";
@@ -12,24 +11,37 @@ import Settings from "./components/Settings";
 import GenerateButton from "./components/GenerateButton";
 import CertificatesPreview from "./components/CertificatesPreview";
 import TemplatePreview from "./components/TemplatePreview";
+import { jsPDF } from "jspdf";
 
 export default function App() {
   const [template, setTemplate] = useState(null);
+  const [templateImage, setTemplateImage] = useState(null); // For natural dimensions
   const [names, setNames] = useState("");
   const [grades, setGrades] = useState("");
+  const [fontColor, setFontColor] = useState("#000000");
+  const [fontSize, setFontSize] = useState(32);
   const [positions, setPositions] = useState({
     name: { x: 100, y: 100 },
     grade: { x: 300, y: 100 },
   });
-  const [fontSize, setFontSize] = useState(32);
   const [generated, setGenerated] = useState([]);
   const [activeField, setActiveField] = useState("name");
-
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
   const [scale, setScale] = useState({ x: 1, y: 1 });
 
-  // Update scale factors whenever template or positions change
+  // ✅ Load custom font on mount
+  useEffect(() => {
+    const loadFont = async () => {
+      const font = new FontFace("Yummy", "url(/src/assets/Yummy.ttf) format('truetype')");
+      await font.load();
+      document.fonts.add(font);
+      console.log("Font Yummy loaded!");
+    };
+    loadFont();
+  }, []);
+
+  // ✅ Update scale when template or positions change
   useEffect(() => {
     if (!imgRef.current) return;
 
@@ -50,6 +62,13 @@ export default function App() {
     if (file) {
       const url = URL.createObjectURL(file);
       setTemplate(url);
+
+      const img = new Image();
+      img.onload = () => {
+        setTemplateImage(img);
+      };
+      img.src = url;
+
       setGenerated([]);
     }
   };
@@ -58,7 +77,7 @@ export default function App() {
     if (!imgRef.current) return;
 
     const rect = imgRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / scale.x; // Convert back to natural image coords
+    const x = (e.clientX - rect.left) / scale.x;
     const y = (e.clientY - rect.top) / scale.y;
 
     setPositions((prev) => ({
@@ -66,66 +85,83 @@ export default function App() {
       [activeField]: { x, y },
     }));
   };
+  const dataURLtoBlob = (dataURL) => {
+    const byteString = atob(dataURL.split(",")[1]);
+    const arrayBuffer = new ArrayBuffer(byteString.length);
+    const uintArray = new Uint8Array(arrayBuffer);
 
-  const generateCertificates = () => {
-    if (!template) return;
+    for (let i = 0; i < byteString.length; i++) {
+      uintArray[i] = byteString.charCodeAt(i);
+    }
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
+    return new Blob([uintArray], { type: "image/png" });
+  };
 
-    img.src = template;
-    img.onload = () => {
-      const certs = [];
+  const generateCertificates = async () => {
+    if (!templateImage) {
+      alert("Upload a template first!");
+      return;
+    }
 
-      const namesArr = names
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
+    await document.fonts.ready;
+    console.log("All fonts are ready, drawing now...");
 
-      const gradesArr = grades
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
+    const namesArr = names
+      .split("\n")
+      .map((n) => n.trim())
+      .filter(Boolean);
 
-      namesArr.forEach((name, idx) => {
-        const grade = gradesArr[idx] || "";
+    const gradesArr = grades
+      .split("\n")
+      .map((g) => g.trim())
+      .filter(Boolean);
 
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
+    const results = [];
 
-        ctx.font = `${fontSize}px "Tahoma", "Arial", sans-serif`;
-        ctx.fillStyle = "black";
-        ctx.direction = "rtl";
-        ctx.textAlign = "right";
+    for (let i = 0; i < namesArr.length; i++) {
+      const name = namesArr[i];
+      const grade = gradesArr[i] || "";
 
-        const studentName = name;
-        const studentGrade = grade ? `درجة: ${grade}` : "";
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
 
-        ctx.fillText(studentName, positions.name.x, positions.name.y);
-        if (studentGrade) {
-          ctx.fillText(studentGrade, positions.grade.x, positions.grade.y);
-        }
+      canvas.width = templateImage.naturalWidth;
+      canvas.height = templateImage.naturalHeight;
 
-        const dataURL = canvas.toDataURL("image/png");
-        certs.push({
-          image: dataURL,
-          name: studentName,
-        });
-      });
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(templateImage, 0, 0);
 
-      setGenerated(certs);
-    };
+      ctx.fillStyle = fontColor;
+      ctx.textAlign = "right";
+      ctx.direction = "rtl";
+
+      // ✅ Draw Name
+      ctx.font = `${fontSize}px "Yummy", Arial, sans-serif`;
+      ctx.fillText(name, positions.name.x, positions.name.y);
+
+      // ✅ Draw Grade if exists
+      if (grade) {
+        ctx.fillText(`درجة: ${grade}`, positions.grade.x, positions.grade.y);
+      }
+
+      const dataURL = canvas.toDataURL("image/png");
+      results.push({ image: dataURL, name });
+    }
+
+    setGenerated(results);
   };
 
   const downloadAll = () => {
+    if (generated.length === 0) {
+      alert("No certificates generated yet!");
+      return;
+    }
+
     const zip = new JSZip();
 
     generated.forEach((cert, idx) => {
       const fileName = cert.name.replace(/[\\/:*?"<>|]/g, "_") || `certificate-${idx + 1}`;
-      const imgData = dataURLtoBlob(cert.image);
+      const imgData = dataURLtoBlob(cert.image); // Convert base64 to Blob
       zip.file(`${fileName}.png`, imgData);
     });
 
@@ -143,24 +179,11 @@ export default function App() {
       });
   };
 
-  const dataURLtoBlob = (dataURL) => {
-    const byteString = atob(dataURL.split(",")[1]);
-    const arrayBuffer = new ArrayBuffer(byteString.length);
-    const uintArray = new Uint8Array(arrayBuffer);
-
-    for (let i = 0; i < byteString.length; i++) {
-      uintArray[i] = byteString.charCodeAt(i);
-    }
-
-    return new Blob([uintArray], { type: "image/png" });
-  };
-
   return (
     <div className="p-6 space-y-4 max-w-6xl mx-auto" dir="rtl">
       <Header />
 
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Input Section */}
         <div className="space-y-4">
           <TemplateUpload handleUpload={handleUpload} />
           <NamesInput names={names} setNames={setNames} />
@@ -171,15 +194,18 @@ export default function App() {
             positions={positions}
             fontSize={fontSize}
             setFontSize={setFontSize}
+            fontColor={fontColor}
+            setFontColor={setFontColor}
           />
+
           <GenerateButton generateCertificates={generateCertificates} template={template} names={names} />
           <CertificatesPreview generated={generated} downloadAll={downloadAll} />
         </div>
 
-        {/* Preview Section */}
         <div className="space-y-4">
           <TemplatePreview
             template={template}
+            ff
             activeField={activeField}
             imgRef={imgRef}
             handlePickPosition={handlePickPosition}
@@ -187,7 +213,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Hidden canvas */}
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );
