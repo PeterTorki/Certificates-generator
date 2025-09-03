@@ -30,6 +30,7 @@ export default function App() {
   const [generated, setGenerated] = useState([]);
   const [activeField, setActiveField] = useState("name");
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [zipFileName, setZipFileName] = useState("شهادات");
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
   const [scale, setScale] = useState({ x: 1, y: 1 });
@@ -295,7 +296,7 @@ export default function App() {
         compressionOptions: { level: 9 },
       })
       .then((content) => {
-        saveAs(content, "certificates.zip");
+        saveAs(content, `${zipFileName}.zip`);
       })
       .catch((err) => {
         console.error("Error generating ZIP file:", err);
@@ -334,7 +335,12 @@ export default function App() {
           />
 
           <GenerateButton generateCertificates={generateCertificates} template={template} names={names} />
-          <CertificatesPreview generated={generated} downloadAll={downloadAll} />
+          <CertificatesPreview
+            generated={generated}
+            downloadAll={downloadAll}
+            zipFileName={zipFileName}
+            setZipFileName={setZipFileName}
+          />
         </div>
 
         <div className="space-y-4">
